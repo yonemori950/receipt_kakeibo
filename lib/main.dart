@@ -9,6 +9,7 @@ import 'dart:io' show Platform;
 import 'database_helper.dart';
 import 'history_screen.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 String extractAmount(String text) {
   final yenPattern = RegExp(r'(¥|￥)?\s?(\d{1,3}(,\d{3})+|\d+)(円)?');
@@ -257,11 +258,24 @@ class _OCRScreenState extends State<OCRScreen> {
                             'amount': _amountController.text,
                           });
 
-                          // リワード広告を表示
-                          _showRewardedAd();
+                          // 登録カウントをインクリメント
+                          final prefs = await SharedPreferences.getInstance();
+                          final currentCount = prefs.getInt('registration_count') ?? 0;
+                          final newCount = currentCount + 1;
+                          await prefs.setInt('registration_count', newCount);
 
+                          // 登録完了のSnackBarを表示
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('保存しました！')),
+                            SnackBar(
+                              content: Text('登録完了！履歴画面に移動します'),
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+
+                          // 履歴画面に遷移
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (context) => HistoryScreen()),
                           );
                         }
                       },

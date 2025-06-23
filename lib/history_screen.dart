@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'dart:io' show Platform;
 import 'database_helper.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class HistoryScreen extends StatefulWidget {
   @override
@@ -8,23 +10,89 @@ class HistoryScreen extends StatefulWidget {
 }
 
 class _HistoryScreenState extends State<HistoryScreen> {
-  final dbHelper = DatabaseHelper();
   List<Map<String, dynamic>> _expenses = [];
-  
-  // AdMobバナー広告
   BannerAd? _bannerAd;
+  RewardedAd? _rewardedAd;
   bool _isAdLoaded = false;
+  bool _isRewardedAdLoaded = false;
+  int _registrationCount = 0;
+  static const int REWARD_INTERVAL = 3; // 3回ごとにリワード広告
 
   @override
   void initState() {
     super.initState();
     _loadExpenses();
     _loadBannerAd();
+    _loadRewardedAd();
+    _loadRegistrationCount();
+  }
+
+  Future<void> _loadRegistrationCount() async {
+    final prefs = await SharedPreferences.getInstance();
+    final count = prefs.getInt('registration_count') ?? 0;
+    setState(() {
+      _registrationCount = count;
+    });
+  }
+
+  void _loadRewardedAd() {
+    String adUnitId;
+    if (Platform.isAndroid) {
+      adUnitId = 'ca-app-pub-3940256099942544/5224354917'; // テスト用ID
+    } else {
+      adUnitId = 'ca-app-pub-3940256099942544/1712485313'; // iOSテスト用ID
+    }
+
+    RewardedAd.load(
+      adUnitId: adUnitId,
+      request: AdRequest(),
+      rewardedAdLoadCallback: RewardedAdLoadCallback(
+        onAdLoaded: (ad) {
+          setState(() {
+            _rewardedAd = ad;
+            _isRewardedAdLoaded = true;
+          });
+        },
+        onAdFailedToLoad: (error) {
+          // エラー時は静かに処理
+        },
+      ),
+    );
+  }
+
+  void _showRewardedAd() {
+    if (_rewardedAd == null || !_isRewardedAdLoaded) {
+      return;
+    }
+
+    try {
+      _rewardedAd!.fullScreenContentCallback = FullScreenContentCallback(
+        onAdDismissedFullScreenContent: (ad) {
+          ad.dispose();
+          _loadRewardedAd();
+        },
+        onAdFailedToShowFullScreenContent: (ad, error) {
+          ad.dispose();
+          _loadRewardedAd();
+        },
+      );
+      
+      _rewardedAd!.show(onUserEarnedReward: (ad, reward) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('🎉 リワードを獲得しました！'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      });
+    } catch (e) {
+      // エラー時は静かに処理
+    }
   }
 
   void _loadBannerAd() {
     _bannerAd = BannerAd(
-      adUnitId: 'ca-app-pub-8148356110096114/3236336102',
+      adUnitId: 'ca-app-pub-3940256099942544/6300978111', // テスト用ID
       size: AdSize.banner,
       request: AdRequest(),
       listener: BannerAdListener(
@@ -34,39 +102,82 @@ class _HistoryScreenState extends State<HistoryScreen> {
           });
         },
         onAdFailedToLoad: (ad, error) {
-          print('Ad failed to load: ' + error.toString());
           ad.dispose();
         },
       ),
     );
+
     _bannerAd!.load();
   }
 
-  @override
-  void dispose() {
-    _bannerAd?.dispose();
-    super.dispose();
-  }
-
   Future<void> _loadExpenses() async {
-    final allRows = await dbHelper.queryAllRows();
+    final dbHelper = DatabaseHelper();
+    final expenses = await dbHelper.queryAllRows();
     setState(() {
-      _expenses = allRows.reversed.toList();
+      _expenses = expenses.reversed.toList();
     });
   }
 
   Future<void> _deleteExpense(int id) async {
+    final dbHelper = DatabaseHelper();
     await dbHelper.delete(id);
-    await _loadExpenses();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('削除しました')),
-    );
+    _loadExpenses();
+  }
+
+  void _showRewardedAdAndNavigateBack() {
+    if (_isRewardedAdLoaded && _rewardedAd != null) {
+      _rewardedAd!.fullScreenContentCallback = FullScreenContentCallback(
+        onAdDismissedFullScreenContent: (ad) {
+          ad.dispose();
+          _loadRewardedAd();
+          Navigator.of(context).pop();
+        },
+        onAdFailedToShowFullScreenContent: (ad, error) {
+          ad.dispose();
+          _loadRewardedAd();
+          Navigator.of(context).pop();
+        },
+      );
+      
+      _rewardedAd!.show(onUserEarnedReward: (ad, reward) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('🎉 リワードを獲得しました！'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      });
+    } else {
+      Navigator.of(context).pop();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('家計簿履歴')),
+      appBar: AppBar(
+        title: Text('家計簿履歴'),
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back),
+          onPressed: () {
+            print('🏠 ホーム画面に戻ります');
+            // リワード広告を表示してから戻る
+            _showRewardedAdAndNavigateBack();
+          },
+        ),
+        actions: [
+          // 登録カウントを表示
+          Padding(
+            padding: EdgeInsets.only(right: 16),
+            child: Center(
+              child: Text(
+                '登録回数: $_registrationCount',
+                style: TextStyle(fontSize: 14),
+              ),
+            ),
+          ),
+        ],
+      ),
       body: Column(
         children: [
           Expanded(
@@ -76,25 +187,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     itemCount: _expenses.length,
                     itemBuilder: (context, index) {
                       final item = _expenses[index];
-                      return Dismissible(
-                        key: ValueKey(item['id']),
-                        direction: DismissDirection.endToStart,
-                        background: Container(
-                          color: Colors.red,
-                          alignment: Alignment.centerRight,
-                          padding: EdgeInsets.only(right: 20),
-                          child: Icon(Icons.delete, color: Colors.white),
-                        ),
-                        onDismissed: (_) => _deleteExpense(item['id']),
-                        child: Card(
-                          margin: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          child: ListTile(
-                            title: Text('💴 ${item['amount']}'),
-                            subtitle: Text('📅 ${item['date']}　🏪 ${item['store']}'),
-                            trailing: IconButton(
-                              icon: Icon(Icons.delete),
-                              onPressed: () => _deleteExpense(item['id']),
-                            ),
+                      return Card(
+                        margin: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        child: ListTile(
+                          title: Text('💴 ${item['amount']}'),
+                          subtitle: Text('📅 ${item['date']}　🏪 ${item['store']}'),
+                          trailing: IconButton(
+                            icon: Icon(Icons.delete),
+                            onPressed: () => _deleteExpense(item['id']),
                           ),
                         ),
                       );
@@ -111,5 +211,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
         ],
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _bannerAd?.dispose();
+    _rewardedAd?.dispose();
+    super.dispose();
   }
 } 

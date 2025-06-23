@@ -31,7 +31,7 @@ dependencies:
   flutter:
     sdk: flutter
   google_mobile_ads: ^4.0.0
-  google_mlkit_text_recognition: ^0.15.0
+  google_mlkit_text_recognition: ^0.8.0
   image_picker: ^1.0.7
   path_provider: ^2.1.2
   path: ^1.9.0

@@ -4,6 +4,8 @@ import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'dart:io' show Platform;
 import 'database_helper.dart';
 import 'history_screen.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -36,7 +38,12 @@ Future<void> requestPermissions() async {
   await Permission.photos.request();
 }
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // AdMobの初期化
+  await MobileAds.instance.initialize();
+  
   runApp(MaterialApp(
     home: OCRScreen(),
     debugShowCheckedModeBanner: false,
@@ -58,11 +65,105 @@ class _OCRScreenState extends State<OCRScreen> {
   final TextEditingController _dateController = TextEditingController();
   final TextEditingController _storeController = TextEditingController();
   final TextEditingController _amountController = TextEditingController();
+  
+  // AdMobバナー広告
+  BannerAd? _bannerAd;
+  bool _isAdLoaded = false;
+  
+  // AdMobリワード広告
+  RewardedAd? _rewardedAd;
+  bool _isRewardedAdReady = false;
 
   @override
   void initState() {
     super.initState();
     requestPermissions();
+    _loadBannerAd();
+    _loadRewardedAd();
+  }
+
+  void _loadBannerAd() {
+    String adUnitId;
+    if (Platform.isAndroid) {
+      adUnitId = 'ca-app-pub-8148356110096114/3236336102';
+    } else {
+      adUnitId = 'ca-app-pub-8148356110096114/6921813131';
+    }
+
+    _bannerAd = BannerAd(
+      adUnitId: adUnitId,
+      size: AdSize.banner,
+      request: AdRequest(),
+      listener: BannerAdListener(
+        onAdLoaded: (ad) {
+          setState(() {
+            _isAdLoaded = true;
+          });
+        },
+        onAdFailedToLoad: (ad, error) {
+          print('Ad failed to load: ' + error.toString());
+          ad.dispose();
+        },
+      ),
+    );
+    _bannerAd!.load();
+  }
+
+  void _loadRewardedAd() {
+    String adUnitId;
+    if (Platform.isAndroid) {
+      adUnitId = 'ca-app-pub-8148356110096114/8146446657';
+    } else {
+      adUnitId = 'ca-app-pub-8148356110096114/6921813131';
+    }
+
+    RewardedAd.load(
+      adUnitId: adUnitId,
+      request: AdRequest(),
+      rewardedAdLoadCallback: RewardedAdLoadCallback(
+        onAdLoaded: (ad) {
+          _rewardedAd = ad;
+          setState(() {
+            _isRewardedAdReady = true;
+          });
+          
+          _rewardedAd!.fullScreenContentCallback = FullScreenContentCallback(
+            onAdDismissedFullScreenContent: (ad) {
+              ad.dispose();
+              _loadRewardedAd(); // 次の広告を読み込み
+            },
+            onAdFailedToShowFullScreenContent: (ad, error) {
+              ad.dispose();
+              _loadRewardedAd(); // 次の広告を読み込み
+            },
+          );
+        },
+        onAdFailedToLoad: (error) {
+          print('Rewarded ad failed to load: $error');
+          _isRewardedAdReady = false;
+        },
+      ),
+    );
+  }
+
+  void _showRewardedAd() {
+    if (_rewardedAd != null) {
+      _rewardedAd!.show(
+        onUserEarnedReward: (ad, reward) {
+          // ユーザーが報酬を獲得した時の処理
+          print('User earned reward: ${reward.amount} ${reward.type}');
+        },
+      );
+    } else {
+      print('Rewarded ad not ready yet');
+    }
+  }
+
+  @override
+  void dispose() {
+    _bannerAd?.dispose();
+    _rewardedAd?.dispose();
+    super.dispose();
   }
 
   Future<void> _pickImage() async {
@@ -113,76 +214,94 @@ class _OCRScreenState extends State<OCRScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text('レシート読み取りOCR')),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
+      body: SafeArea(
         child: Column(
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                ElevatedButton.icon(
-                  onPressed: _pickImage,
-                  icon: Icon(Icons.camera_alt),
-                  label: Text('カメラで撮影'),
-                ),
-                ElevatedButton.icon(
-                  onPressed: _pickImageFromGallery,
-                  icon: Icon(Icons.photo_library),
-                  label: Text('ギャラリーから選択'),
-                ),
-              ],
-            ),
-            SizedBox(height: 16),
-            _image != null ? Image.file(_image!, height: 200) : Container(),
-            SizedBox(height: 16),
-            if (extractedText.isNotEmpty) ...[
-              TextField(
-                controller: _dateController,
-                decoration: InputDecoration(labelText: '日付'),
-              ),
-              TextField(
-                controller: _storeController,
-                decoration: InputDecoration(labelText: '店舗名'),
-              ),
-              TextField(
-                controller: _amountController,
-                decoration: InputDecoration(labelText: '金額'),
-                keyboardType: TextInputType.number,
-              ),
-              SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () async {
-                  if (_amountController.text.isNotEmpty && _dateController.text.isNotEmpty) {
-                    await dbHelper.insert({
-                      'date': _dateController.text,
-                      'store': _storeController.text,
-                      'amount': _amountController.text,
-                    });
-
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('保存しました！')),
-                    );
-                  }
-                },
-                child: Text('登録'),
-              ),
-              SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => HistoryScreen()),
-                  );
-                },
-                child: Text('履歴を見る'),
-              ),
-              SizedBox(height: 16),
-            ],
             Expanded(
               child: SingleChildScrollView(
-                child: Text(extractedText),
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: _pickImage,
+                          icon: Icon(Icons.camera_alt),
+                          label: Text('カメラで撮影'),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: _pickImageFromGallery,
+                          icon: Icon(Icons.photo_library),
+                          label: Text('ギャラリーから選択'),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 16),
+                    _image != null ? Image.file(_image!, height: 200) : Container(),
+                    SizedBox(height: 16),
+                    if (extractedText.isNotEmpty) ...[
+                      TextField(
+                        controller: _dateController,
+                        decoration: InputDecoration(labelText: '日付'),
+                      ),
+                      TextField(
+                        controller: _storeController,
+                        decoration: InputDecoration(labelText: '店舗名'),
+                      ),
+                      TextField(
+                        controller: _amountController,
+                        decoration: InputDecoration(labelText: '金額'),
+                        keyboardType: TextInputType.number,
+                      ),
+                      SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () async {
+                          if (_amountController.text.isNotEmpty && _dateController.text.isNotEmpty) {
+                            // データベースに保存
+                            await dbHelper.insert({
+                              'date': _dateController.text,
+                              'store': _storeController.text,
+                              'amount': _amountController.text,
+                            });
+
+                            // リワード広告を表示
+                            _showRewardedAd();
+
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('保存しました！')),
+                            );
+                          }
+                        },
+                        child: Text('登録'),
+                      ),
+                      SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (context) => HistoryScreen()),
+                          );
+                        },
+                        child: Text('履歴を見る'),
+                      ),
+                      SizedBox(height: 16),
+                    ],
+                    if (extractedText.isNotEmpty)
+                      Text(extractedText),
+                    // バナー広告の下に余白を追加
+                    SizedBox(height: 60), // バナー広告の高さ分の余白
+                  ],
+                ),
               ),
-            )
+            ),
+            // バナー広告をSafeAreaの中に明示的に置く
+            if (_isAdLoaded)
+              Container(
+                width: double.infinity,
+                height: _bannerAd!.size.height.toDouble(),
+                child: AdWidget(ad: _bannerAd!),
+              ),
           ],
         ),
       ),

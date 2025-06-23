@@ -41,7 +41,7 @@
         <!-- AdMob App ID -->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="ca-app-pub-8148356110096114~8859912465"/>
+            android:value="ca-app-pub-8148356110096114~9527246432"/>
         <!-- File Provider for image_picker -->
         <provider
             android:name="androidx.core.content.FileProvider"

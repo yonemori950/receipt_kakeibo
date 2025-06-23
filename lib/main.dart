@@ -3,13 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:path/path.dart';
+import 'package:path/path.dart' as path;
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'dart:io' show Platform;
 import 'database_helper.dart';
 import 'history_screen.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'receipt_edit_screen.dart';
 
 String extractAmount(String text) {
   final yenPattern = RegExp(r'(¥|￥)?\s?(\d{1,3}(,\d{3})+|\d+)(円)?');
@@ -73,7 +74,9 @@ class _OCRScreenState extends State<OCRScreen> {
   
   // AdMobリワード広告
   RewardedAd? _rewardedAd;
-  bool _isRewardedAdReady = false;
+  bool _isRewardedAdLoaded = false;
+  int _registrationCount = 0;
+  static const int REWARD_INTERVAL = 3; // 3回ごとにリワード広告
 
   @override
   void initState() {
@@ -81,6 +84,7 @@ class _OCRScreenState extends State<OCRScreen> {
     requestPermissions();
     _loadBannerAd();
     _loadRewardedAd();
+    _loadRegistrationCount();
   }
 
   void _loadBannerAd() {
@@ -118,7 +122,7 @@ class _OCRScreenState extends State<OCRScreen> {
         onAdLoaded: (ad) {
           _rewardedAd = ad;
           setState(() {
-            _isRewardedAdReady = true;
+            _isRewardedAdLoaded = true;
           });
           
           _rewardedAd!.fullScreenContentCallback = FullScreenContentCallback(
@@ -134,23 +138,75 @@ class _OCRScreenState extends State<OCRScreen> {
         },
         onAdFailedToLoad: (error) {
           print('Rewarded ad failed to load: $error');
-          _isRewardedAdReady = false;
+          _isRewardedAdLoaded = false;
         },
       ),
     );
   }
 
   void _showRewardedAd() {
-    if (_rewardedAd != null) {
-      _rewardedAd!.show(
-        onUserEarnedReward: (ad, reward) {
-          // ユーザーが報酬を獲得した時の処理
-          print('User earned reward: ${reward.amount} ${reward.type}');
+    if (_rewardedAd == null || !_isRewardedAdLoaded) {
+      return;
+    }
+
+    try {
+      _rewardedAd!.fullScreenContentCallback = FullScreenContentCallback(
+        onAdDismissedFullScreenContent: (ad) {
+          ad.dispose();
+          _loadRewardedAd();
+        },
+        onAdFailedToShowFullScreenContent: (ad, error) {
+          ad.dispose();
+          _loadRewardedAd();
+        },
+        onAdShowedFullScreenContent: (ad) {
+          // 広告が表示された時のメッセージ
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('📺 リワード広告を視聴してください'),
+              duration: Duration(seconds: 3),
+              backgroundColor: Colors.orange,
+            ),
+          );
         },
       );
-    } else {
-      print('Rewarded ad not ready yet');
+      
+      _rewardedAd!.show(onUserEarnedReward: (ad, reward) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('🎉 リワードを獲得しました！'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      });
+    } catch (e) {
+      // エラー時は静かに処理
     }
+  }
+
+  void _showRewardedAdDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('🎬 リワード広告'),
+          content: Text('広告が流れます'),
+          actions: [
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                // 少し遅延してからリワード広告を表示
+                Future.delayed(Duration(milliseconds: 500), () {
+                  _showRewardedAd();
+                });
+              },
+              child: Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -202,6 +258,14 @@ class _OCRScreenState extends State<OCRScreen> {
         _amountController.text = extractAmount(extractedText);
       });
     }
+  }
+
+  Future<void> _loadRegistrationCount() async {
+    final prefs = await SharedPreferences.getInstance();
+    final count = prefs.getInt('registration_count') ?? 0;
+    setState(() {
+      _registrationCount = count;
+    });
   }
 
   @override
@@ -263,36 +327,47 @@ class _OCRScreenState extends State<OCRScreen> {
                           final currentCount = prefs.getInt('registration_count') ?? 0;
                           final newCount = currentCount + 1;
                           await prefs.setInt('registration_count', newCount);
+                          setState(() {
+                            _registrationCount = newCount;
+                          });
 
                           // 登録完了のSnackBarを表示
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: Text('登録完了！履歴画面に移動します'),
+                              content: Text('登録完了！'),
                               duration: Duration(seconds: 2),
                             ),
                           );
 
-                          // 履歴画面に遷移
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (context) => HistoryScreen()),
-                          );
+                          // 3回ごとにダイアログ表示してリワード広告を表示
+                          if (newCount % REWARD_INTERVAL == 0) {
+                            _showRewardedAdDialog();
+                          }
+
+                          // 入力フィールドをクリア
+                          _amountController.clear();
+                          _dateController.clear();
+                          _storeController.clear();
+                          setState(() {
+                            _image = null;
+                            extractedText = '';
+                          });
                         }
                       },
                       child: Text('登録'),
                     ),
-                    SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => HistoryScreen()),
-                        );
-                      },
-                      child: Text('履歴を見る'),
-                    ),
-                    SizedBox(height: 16),
                   ],
+                  SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => HistoryScreen()),
+                      );
+                    },
+                    child: Text('履歴を見る'),
+                  ),
+                  SizedBox(height: 16),
                   Expanded(
                     child: SingleChildScrollView(
                       child: Text(extractedText),

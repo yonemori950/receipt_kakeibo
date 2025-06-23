@@ -83,8 +83,15 @@ class _OCRScreenState extends State<OCRScreen> {
   }
 
   void _loadBannerAd() {
+    String adUnitId;
+    if (Platform.isAndroid) {
+      adUnitId = 'ca-app-pub-8148356110096114/3236336102';
+    } else {
+      adUnitId = 'ca-app-pub-8148356110096114/6921813131';
+    }
+
     _bannerAd = BannerAd(
-      adUnitId: 'ca-app-pub-8148356110096114/3236336102',
+      adUnitId: adUnitId,
       size: AdSize.banner,
       request: AdRequest(),
       listener: BannerAdListener(
@@ -210,7 +217,7 @@ class _OCRScreenState extends State<OCRScreen> {
       body: Column(
         children: [
           Expanded(
-            child: Padding(
+            child: SingleChildScrollView(
               padding: const EdgeInsets.all(16.0),
               child: Column(
                 children: [
@@ -279,11 +286,10 @@ class _OCRScreenState extends State<OCRScreen> {
                     ),
                     SizedBox(height: 16),
                   ],
-                  Expanded(
-                    child: SingleChildScrollView(
-                      child: Text(extractedText),
-                    ),
-                  )
+                  if (extractedText.isNotEmpty)
+                    Text(extractedText),
+                  // バナー広告の下に余白を追加
+                  SizedBox(height: 60), // バナー広告の高さ分の余白
                 ],
               ),
             ),

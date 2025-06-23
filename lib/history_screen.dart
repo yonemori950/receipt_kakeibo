@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'dart:io' show Platform;
 import 'database_helper.dart';
 
 class HistoryScreen extends StatefulWidget {
@@ -23,8 +24,15 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   void _loadBannerAd() {
+    String adUnitId;
+    if (Platform.isAndroid) {
+      adUnitId = 'ca-app-pub-8148356110096114/3236336102';
+    } else {
+      adUnitId = 'ca-app-pub-8148356110096114/6921813131';
+    }
+
     _bannerAd = BannerAd(
-      adUnitId: 'ca-app-pub-8148356110096114/3236336102',
+      adUnitId: adUnitId,
       size: AdSize.banner,
       request: AdRequest(),
       listener: BannerAdListener(
@@ -73,6 +81,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
             child: _expenses.isEmpty
                 ? Center(child: Text('まだ登録されていません'))
                 : ListView.builder(
+                    padding: EdgeInsets.only(bottom: 60), // バナー広告の高さ分の余白
                     itemCount: _expenses.length,
                     itemBuilder: (context, index) {
                       final item = _expenses[index];

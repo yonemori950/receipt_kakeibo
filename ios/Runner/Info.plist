@@ -46,7 +46,7 @@
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>GADApplicationIdentifier</key>
-	<string>ca-app-pub-8148356110096114~8859912465</string>
+	<string>ca-app-pub-8148356110096114~9527246432</string>
 	<key>NSCameraUsageDescription</key>
 	<string>カメラを使ってレシートを読み取ります</string>
 	<key>NSPhotoLibraryUsageDescription</key>

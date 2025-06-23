@@ -51,5 +51,9 @@
 	<string>カメラを使ってレシートを読み取ります</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>画像ライブラリからレシート画像を選択します</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>レシート画像を保存するために使用します</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>カメラ撮影時に音声を録音するために使用します</string>
 </dict>
 </plist>

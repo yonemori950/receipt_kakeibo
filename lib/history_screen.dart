@@ -71,16 +71,153 @@ class _HistoryScreenState extends State<HistoryScreen> {
     );
   }
 
+  void _showExpenseDetail(Map<String, dynamic> expense) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ハンドル
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            SizedBox(height: 20),
+            // タイトル
+            Text(
+              '支出詳細',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            SizedBox(height: 20),
+            // 詳細情報
+            _buildDetailRow('💰 金額', expense['amount']),
+            _buildDetailRow('📅 日付', expense['date']),
+            _buildDetailRow('🏪 店舗名', expense['store']),
+            SizedBox(height: 20),
+            // アクションボタン
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      _deleteExpense(expense['id']);
+                    },
+                    icon: Icon(Icons.delete),
+                    label: Text('削除'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ),
+                SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: Text('閉じる'),
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 80,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.grey[600],
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 16,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('家計簿履歴')),
+      appBar: AppBar(
+        title: Text('家計簿履歴'),
+        actions: [
+          if (_expenses.isNotEmpty)
+            IconButton(
+              icon: Icon(Icons.refresh),
+              onPressed: _loadExpenses,
+              tooltip: '更新',
+            ),
+        ],
+      ),
       body: SafeArea(
         child: Column(
           children: [
             Expanded(
               child: _expenses.isEmpty
-                  ? Center(child: Text('まだ登録されていません'))
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.receipt_long,
+                            size: 64,
+                            color: Colors.grey[400],
+                          ),
+                          SizedBox(height: 16),
+                          Text(
+                            'まだ登録されていません',
+                            style: TextStyle(
+                              fontSize: 18,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                          SizedBox(height: 8),
+                          Text(
+                            'レシートを撮影して登録してみましょう',
+                            style: TextStyle(
+                              color: Colors.grey[500],
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
                   : ListView.builder(
                       padding: EdgeInsets.only(bottom: 60), // バナー広告の高さ分の余白
                       itemCount: _expenses.length,
@@ -99,12 +236,33 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           child: Card(
                             margin: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                             child: ListTile(
-                              title: Text('💴 ${item['amount']}'),
-                              subtitle: Text('📅 ${item['date']}　🏪 ${item['store']}'),
-                              trailing: IconButton(
-                                icon: Icon(Icons.delete),
-                                onPressed: () => _deleteExpense(item['id']),
+                              title: Text(
+                                '💴 ${item['amount']}',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
                               ),
+                              subtitle: Text(
+                                '📅 ${item['date']}　🏪 ${item['store']}',
+                                style: TextStyle(fontSize: 14),
+                              ),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: Icon(Icons.info_outline),
+                                    onPressed: () => _showExpenseDetail(item),
+                                    tooltip: '詳細を見る',
+                                  ),
+                                  IconButton(
+                                    icon: Icon(Icons.delete),
+                                    onPressed: () => _deleteExpense(item['id']),
+                                    tooltip: '削除',
+                                  ),
+                                ],
+                              ),
+                              onTap: () => _showExpenseDetail(item),
                             ),
                           ),
                         );

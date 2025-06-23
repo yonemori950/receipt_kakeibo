@@ -75,49 +75,51 @@ class _HistoryScreenState extends State<HistoryScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text('家計簿履歴')),
-      body: Column(
-        children: [
-          Expanded(
-            child: _expenses.isEmpty
-                ? Center(child: Text('まだ登録されていません'))
-                : ListView.builder(
-                    padding: EdgeInsets.only(bottom: 60), // バナー広告の高さ分の余白
-                    itemCount: _expenses.length,
-                    itemBuilder: (context, index) {
-                      final item = _expenses[index];
-                      return Dismissible(
-                        key: ValueKey(item['id']),
-                        direction: DismissDirection.endToStart,
-                        background: Container(
-                          color: Colors.red,
-                          alignment: Alignment.centerRight,
-                          padding: EdgeInsets.only(right: 20),
-                          child: Icon(Icons.delete, color: Colors.white),
-                        ),
-                        onDismissed: (_) => _deleteExpense(item['id']),
-                        child: Card(
-                          margin: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          child: ListTile(
-                            title: Text('💴 ${item['amount']}'),
-                            subtitle: Text('📅 ${item['date']}　🏪 ${item['store']}'),
-                            trailing: IconButton(
-                              icon: Icon(Icons.delete),
-                              onPressed: () => _deleteExpense(item['id']),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: _expenses.isEmpty
+                  ? Center(child: Text('まだ登録されていません'))
+                  : ListView.builder(
+                      padding: EdgeInsets.only(bottom: 60), // バナー広告の高さ分の余白
+                      itemCount: _expenses.length,
+                      itemBuilder: (context, index) {
+                        final item = _expenses[index];
+                        return Dismissible(
+                          key: ValueKey(item['id']),
+                          direction: DismissDirection.endToStart,
+                          background: Container(
+                            color: Colors.red,
+                            alignment: Alignment.centerRight,
+                            padding: EdgeInsets.only(right: 20),
+                            child: Icon(Icons.delete, color: Colors.white),
+                          ),
+                          onDismissed: (_) => _deleteExpense(item['id']),
+                          child: Card(
+                            margin: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            child: ListTile(
+                              title: Text('💴 ${item['amount']}'),
+                              subtitle: Text('📅 ${item['date']}　🏪 ${item['store']}'),
+                              trailing: IconButton(
+                                icon: Icon(Icons.delete),
+                                onPressed: () => _deleteExpense(item['id']),
+                              ),
                             ),
                           ),
-                        ),
-                      );
-                    },
-                  ),
-          ),
-          // バナー広告
-          if (_isAdLoaded)
-            Container(
-              width: _bannerAd!.size.width.toDouble(),
-              height: _bannerAd!.size.height.toDouble(),
-              child: AdWidget(ad: _bannerAd!),
+                        );
+                      },
+                    ),
             ),
-        ],
+            // バナー広告をSafeAreaの中に明示的に置く
+            if (_isAdLoaded)
+              Container(
+                width: double.infinity,
+                height: _bannerAd!.size.height.toDouble(),
+                child: AdWidget(ad: _bannerAd!),
+              ),
+          ],
+        ),
       ),
     );
   }

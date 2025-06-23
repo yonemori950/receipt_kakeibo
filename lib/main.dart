@@ -214,94 +214,96 @@ class _OCRScreenState extends State<OCRScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text('レシート読み取りOCR')),
-      body: Column(
-        children: [
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      ElevatedButton.icon(
-                        onPressed: _pickImage,
-                        icon: Icon(Icons.camera_alt),
-                        label: Text('カメラで撮影'),
-                      ),
-                      ElevatedButton.icon(
-                        onPressed: _pickImageFromGallery,
-                        icon: Icon(Icons.photo_library),
-                        label: Text('ギャラリーから選択'),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 16),
-                  _image != null ? Image.file(_image!, height: 200) : Container(),
-                  SizedBox(height: 16),
-                  if (extractedText.isNotEmpty) ...[
-                    TextField(
-                      controller: _dateController,
-                      decoration: InputDecoration(labelText: '日付'),
-                    ),
-                    TextField(
-                      controller: _storeController,
-                      decoration: InputDecoration(labelText: '店舗名'),
-                    ),
-                    TextField(
-                      controller: _amountController,
-                      decoration: InputDecoration(labelText: '金額'),
-                      keyboardType: TextInputType.number,
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: _pickImage,
+                          icon: Icon(Icons.camera_alt),
+                          label: Text('カメラで撮影'),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: _pickImageFromGallery,
+                          icon: Icon(Icons.photo_library),
+                          label: Text('ギャラリーから選択'),
+                        ),
+                      ],
                     ),
                     SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: () async {
-                        if (_amountController.text.isNotEmpty && _dateController.text.isNotEmpty) {
-                          // データベースに保存
-                          await dbHelper.insert({
-                            'date': _dateController.text,
-                            'store': _storeController.text,
-                            'amount': _amountController.text,
-                          });
+                    _image != null ? Image.file(_image!, height: 200) : Container(),
+                    SizedBox(height: 16),
+                    if (extractedText.isNotEmpty) ...[
+                      TextField(
+                        controller: _dateController,
+                        decoration: InputDecoration(labelText: '日付'),
+                      ),
+                      TextField(
+                        controller: _storeController,
+                        decoration: InputDecoration(labelText: '店舗名'),
+                      ),
+                      TextField(
+                        controller: _amountController,
+                        decoration: InputDecoration(labelText: '金額'),
+                        keyboardType: TextInputType.number,
+                      ),
+                      SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () async {
+                          if (_amountController.text.isNotEmpty && _dateController.text.isNotEmpty) {
+                            // データベースに保存
+                            await dbHelper.insert({
+                              'date': _dateController.text,
+                              'store': _storeController.text,
+                              'amount': _amountController.text,
+                            });
 
-                          // リワード広告を表示
-                          _showRewardedAd();
+                            // リワード広告を表示
+                            _showRewardedAd();
 
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('保存しました！')),
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('保存しました！')),
+                            );
+                          }
+                        },
+                        child: Text('登録'),
+                      ),
+                      SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (context) => HistoryScreen()),
                           );
-                        }
-                      },
-                      child: Text('登録'),
-                    ),
-                    SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => HistoryScreen()),
-                        );
-                      },
-                      child: Text('履歴を見る'),
-                    ),
-                    SizedBox(height: 16),
+                        },
+                        child: Text('履歴を見る'),
+                      ),
+                      SizedBox(height: 16),
+                    ],
+                    if (extractedText.isNotEmpty)
+                      Text(extractedText),
+                    // バナー広告の下に余白を追加
+                    SizedBox(height: 60), // バナー広告の高さ分の余白
                   ],
-                  if (extractedText.isNotEmpty)
-                    Text(extractedText),
-                  // バナー広告の下に余白を追加
-                  SizedBox(height: 60), // バナー広告の高さ分の余白
-                ],
+                ),
               ),
             ),
-          ),
-          // バナー広告
-          if (_isAdLoaded)
-            Container(
-              width: _bannerAd!.size.width.toDouble(),
-              height: _bannerAd!.size.height.toDouble(),
-              child: AdWidget(ad: _bannerAd!),
-            ),
-        ],
+            // バナー広告をSafeAreaの中に明示的に置く
+            if (_isAdLoaded)
+              Container(
+                width: double.infinity,
+                height: _bannerAd!.size.height.toDouble(),
+                child: AdWidget(ad: _bannerAd!),
+              ),
+          ],
+        ),
       ),
     );
   }

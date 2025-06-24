@@ -77,6 +77,7 @@ class _OCRScreenState extends State<OCRScreen> {
   bool _isRewardedAdLoaded = false;
   int _registrationCount = 0;
   static const int REWARD_INTERVAL = 3; // 3回ごとにリワード広告
+  DateTime? _lastRewardShownDate; // 最後にリワードを表示した日付
 
   @override
   void initState() {
@@ -85,6 +86,7 @@ class _OCRScreenState extends State<OCRScreen> {
     _loadBannerAd();
     _loadRewardedAd();
     _loadRegistrationCount();
+    _loadLastRewardShownDate();
   }
 
   void _loadBannerAd() {
@@ -163,18 +165,20 @@ class _OCRScreenState extends State<OCRScreen> {
           // 広告が表示された時のメッセージ
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('📺 リワード広告を視聴してください'),
+              content: Text('📺 広告解除のため動画をご視聴ください'),
               duration: Duration(seconds: 3),
               backgroundColor: Colors.orange,
             ),
           );
+          // 最後に表示した日付を保存
+          _saveLastRewardShownDate();
         },
       );
       
       _rewardedAd!.show(onUserEarnedReward: (ad, reward) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('🎉 リワードを獲得しました！'),
+            content: Text('🎉 広告が解除されました！'),
             backgroundColor: Colors.green,
           ),
         );
@@ -268,123 +272,186 @@ class _OCRScreenState extends State<OCRScreen> {
     });
   }
 
+  Future<void> _loadLastRewardShownDate() async {
+    final prefs = await SharedPreferences.getInstance();
+    final lastShownTimestamp = prefs.getInt('last_reward_shown_timestamp');
+    if (lastShownTimestamp != null) {
+      setState(() {
+        _lastRewardShownDate = DateTime.fromMillisecondsSinceEpoch(lastShownTimestamp);
+      });
+    }
+  }
+
+  Future<void> _saveLastRewardShownDate() async {
+    final prefs = await SharedPreferences.getInstance();
+    final now = DateTime.now();
+    await prefs.setInt('last_reward_shown_timestamp', now.millisecondsSinceEpoch);
+    setState(() {
+      _lastRewardShownDate = now;
+    });
+  }
+
+  bool _canShowReward() {
+    if (_lastRewardShownDate == null) {
+      return true;
+    }
+    final now = DateTime.now();
+    final difference = now.difference(_lastRewardShownDate!);
+    return difference.inDays >= 1;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('レシート読み取りOCR')),
-      body: Column(
-        children: [
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      ElevatedButton.icon(
-                        onPressed: _pickImage,
-                        icon: Icon(Icons.camera_alt),
-                        label: Text('カメラで撮影'),
+      appBar: AppBar(title: Text('シンプル家計簿')),
+      body: SafeArea(
+        child: Column(
+          children: [
+            // メインコンテンツ（スクロール可能）
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: _pickImage,
+                          icon: Icon(Icons.camera_alt),
+                          label: Text('カメラで撮影'),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: _pickImageFromGallery,
+                          icon: Icon(Icons.photo_library),
+                          label: Text('ギャラリーから選択'),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 16),
+                    _image != null ? Image.file(_image!, height: 200) : Container(),
+                    SizedBox(height: 16),
+                    if (extractedText.isNotEmpty) ...[
+                      TextField(
+                        controller: _dateController,
+                        decoration: InputDecoration(labelText: '日付'),
                       ),
-                      ElevatedButton.icon(
-                        onPressed: _pickImageFromGallery,
-                        icon: Icon(Icons.photo_library),
-                        label: Text('ギャラリーから選択'),
+                      SizedBox(height: 8),
+                      TextField(
+                        controller: _storeController,
+                        decoration: InputDecoration(labelText: '店舗名'),
+                      ),
+                      SizedBox(height: 8),
+                      TextField(
+                        controller: _amountController,
+                        decoration: InputDecoration(labelText: '金額'),
+                        keyboardType: TextInputType.number,
+                      ),
+                      SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () async {
+                          if (_amountController.text.isNotEmpty && _dateController.text.isNotEmpty) {
+                            // データベースに保存
+                            await dbHelper.insert({
+                              'date': _dateController.text,
+                              'store': _storeController.text,
+                              'amount': _amountController.text,
+                            });
+
+                            // 登録カウントをインクリメント
+                            final prefs = await SharedPreferences.getInstance();
+                            final currentCount = prefs.getInt('registration_count') ?? 0;
+                            final newCount = currentCount + 1;
+                            await prefs.setInt('registration_count', newCount);
+                            setState(() {
+                              _registrationCount = newCount;
+                            });
+
+                            // 登録完了のSnackBarを表示
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('登録完了！'),
+                                duration: Duration(seconds: 2),
+                              ),
+                            );
+
+                            // 3回ごとにダイアログ表示してリワード広告を表示
+                            if (newCount % REWARD_INTERVAL == 0 && _canShowReward()) {
+                              _showRewardedAdDialog();
+                            }
+
+                            // 入力フィールドをクリア
+                            _amountController.clear();
+                            _dateController.clear();
+                            _storeController.clear();
+                            setState(() {
+                              _image = null;
+                              extractedText = '';
+                            });
+                          }
+                        },
+                        child: Text('登録'),
                       ),
                     ],
-                  ),
-                  SizedBox(height: 16),
-                  _image != null ? Image.file(_image!, height: 200) : Container(),
-                  SizedBox(height: 16),
-                  if (extractedText.isNotEmpty) ...[
-                    TextField(
-                      controller: _dateController,
-                      decoration: InputDecoration(labelText: '日付'),
-                    ),
-                    TextField(
-                      controller: _storeController,
-                      decoration: InputDecoration(labelText: '店舗名'),
-                    ),
-                    TextField(
-                      controller: _amountController,
-                      decoration: InputDecoration(labelText: '金額'),
-                      keyboardType: TextInputType.number,
+                    SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => HistoryScreen()),
+                        );
+                      },
+                      child: Text('履歴を見る'),
                     ),
                     SizedBox(height: 16),
                     ElevatedButton(
-                      onPressed: () async {
-                        if (_amountController.text.isNotEmpty && _dateController.text.isNotEmpty) {
-                          // データベースに保存
-                          await dbHelper.insert({
-                            'date': _dateController.text,
-                            'store': _storeController.text,
-                            'amount': _amountController.text,
-                          });
-
-                          // 登録カウントをインクリメント
-                          final prefs = await SharedPreferences.getInstance();
-                          final currentCount = prefs.getInt('registration_count') ?? 0;
-                          final newCount = currentCount + 1;
-                          await prefs.setInt('registration_count', newCount);
-                          setState(() {
-                            _registrationCount = newCount;
-                          });
-
-                          // 登録完了のSnackBarを表示
+                      onPressed: () {
+                        if (_canShowReward()) {
+                          _showRewardedAdDialog();
+                        } else {
+                          final remainingHours = 24 - DateTime.now().difference(_lastRewardShownDate!).inHours;
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: Text('登録完了！'),
-                              duration: Duration(seconds: 2),
+                              content: Text('広告解除は${remainingHours}時間後に再度可能です'),
+                              backgroundColor: Colors.orange,
                             ),
                           );
-
-                          // 3回ごとにダイアログ表示してリワード広告を表示
-                          if (newCount % REWARD_INTERVAL == 0) {
-                            _showRewardedAdDialog();
-                          }
-
-                          // 入力フィールドをクリア
-                          _amountController.clear();
-                          _dateController.clear();
-                          _storeController.clear();
-                          setState(() {
-                            _image = null;
-                            extractedText = '';
-                          });
                         }
                       },
-                      child: Text('登録'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _canShowReward() ? Colors.blue : Colors.grey,
+                      ),
+                      child: Text(_canShowReward() ? '広告解除（1日1回）' : '広告解除（1日1回）'),
                     ),
+                    SizedBox(height: 16),
+                    // 抽出されたテキストの表示
+                    if (extractedText.isNotEmpty)
+                      Container(
+                        width: double.infinity,
+                        padding: EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          extractedText,
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    SizedBox(height: 16),
                   ],
-                  SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => HistoryScreen()),
-                      );
-                    },
-                    child: Text('履歴を見る'),
-                  ),
-                  SizedBox(height: 16),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      child: Text(extractedText),
-                    ),
-                  )
-                ],
+                ),
               ),
             ),
-          ),
-          // バナー広告
-          if (_isAdLoaded)
-            Container(
-              width: _bannerAd!.size.width.toDouble(),
-              height: _bannerAd!.size.height.toDouble(),
-              child: AdWidget(ad: _bannerAd!),
-            ),
-        ],
+            // バナー広告
+            if (_isAdLoaded)
+              Container(
+                width: _bannerAd!.size.width.toDouble(),
+                height: _bannerAd!.size.height.toDouble(),
+                child: AdWidget(ad: _bannerAd!),
+              ),
+          ],
+        ),
       ),
     );
   }

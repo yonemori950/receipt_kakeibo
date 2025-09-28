@@ -3,12 +3,15 @@ import 'package:flutter/material.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:path/path.dart';
+import 'package:path/path.dart' as path;
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'dart:io' show Platform;
 import 'database_helper.dart';
 import 'history_screen.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'payment_manager.dart';
+import 'premium_dialog.dart';
+import 'package:in_app_purchase/in_app_purchase.dart';
 
 String extractAmount(String text) {
   final yenPattern = RegExp(r'(¥|￥)?\s?(\d{1,3}(,\d{3})+|\d+)(円)?');
@@ -73,13 +76,45 @@ class _OCRScreenState extends State<OCRScreen> {
   // AdMobリワード広告
   RewardedAd? _rewardedAd;
   bool _isRewardedAdReady = false;
+  
+  // 広告表示状態
+  bool _shouldShowAds = true;
 
   @override
   void initState() {
     super.initState();
     requestPermissions();
-    _loadBannerAd();
-    _loadRewardedAd();
+    _initializeAds();
+    _initializePayment();
+  }
+
+  Future<void> _initializeAds() async {
+    final shouldShow = await PaymentManager.shouldShowAds();
+    setState(() {
+      _shouldShowAds = shouldShow;
+    });
+    
+    if (_shouldShowAds) {
+      _loadBannerAd();
+      _loadRewardedAd();
+    }
+  }
+
+  void _initializePayment() {
+    PaymentManager.initializePurchaseListener((purchaseDetails) {
+      if (purchaseDetails.status == PurchaseStatus.purchased) {
+        PaymentManager.setAdRemovalPurchased();
+        _initializeAds(); // 広告状態を更新
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Premium版の購入が完了しました！'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+    });
   }
 
   void _loadBannerAd() {
@@ -152,6 +187,17 @@ class _OCRScreenState extends State<OCRScreen> {
         onUserEarnedReward: (ad, reward) {
           // ユーザーが報酬を獲得した時の処理
           print('User earned reward: ${reward.amount} ${reward.type}');
+          
+          // 24時間広告を無効化
+          PaymentManager.disableAdsFor24Hours();
+          _initializeAds(); // 広告状態を更新
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('24時間広告を非表示にしました！'),
+              backgroundColor: Colors.green,
+            ),
+          );
         },
       );
     } else {
@@ -163,6 +209,7 @@ class _OCRScreenState extends State<OCRScreen> {
   void dispose() {
     _bannerAd?.dispose();
     _rewardedAd?.dispose();
+    PaymentManager.dispose();
     super.dispose();
   }
 
@@ -213,7 +260,25 @@ class _OCRScreenState extends State<OCRScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('レシート読み取りOCR')),
+      appBar: AppBar(
+        title: Text('レシート読み取りOCR'),
+        actions: [
+          if (_shouldShowAds)
+            IconButton(
+              icon: Icon(Icons.star),
+              onPressed: () async {
+                final result = await showDialog<bool>(
+                  context: context,
+                  builder: (context) => PremiumDialog(),
+                );
+                if (result == true) {
+                  _initializeAds(); // 広告状態を更新
+                }
+              },
+              tooltip: 'Premium版を購入',
+            ),
+        ],
+      ),
       body: SafeArea(
         child: Column(
           children: [
@@ -222,18 +287,25 @@ class _OCRScreenState extends State<OCRScreen> {
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    // ボタンを縦に配置して重なりを防ぐ
+                    Column(
                       children: [
-                        ElevatedButton.icon(
-                          onPressed: _pickImage,
-                          icon: Icon(Icons.camera_alt),
-                          label: Text('カメラで撮影'),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: _pickImage,
+                            icon: Icon(Icons.camera_alt),
+                            label: Text('カメラで撮影'),
+                          ),
                         ),
-                        ElevatedButton.icon(
-                          onPressed: _pickImageFromGallery,
-                          icon: Icon(Icons.photo_library),
-                          label: Text('ギャラリーから選択'),
+                        SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: _pickImageFromGallery,
+                            icon: Icon(Icons.photo_library),
+                            label: Text('ギャラリーから選択'),
+                          ),
                         ),
                       ],
                     ),
@@ -265,8 +337,10 @@ class _OCRScreenState extends State<OCRScreen> {
                               'amount': _amountController.text,
                             });
 
-                            // リワード広告を表示
-                            _showRewardedAd();
+                            // リワード広告を表示（広告が有効な場合のみ）
+                            if (_shouldShowAds) {
+                              _showRewardedAd();
+                            }
 
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(content: Text('保存しました！')),
@@ -289,17 +363,21 @@ class _OCRScreenState extends State<OCRScreen> {
                     ],
                     if (extractedText.isNotEmpty)
                       Text(extractedText),
-                    // バナー広告の下に余白を追加
-                    SizedBox(height: 60), // バナー広告の高さ分の余白
+                    // バナー広告の下に余白を追加（広告が表示される場合のみ）
+                    if (_shouldShowAds && _isAdLoaded) SizedBox(height: 80), // バナー広告の高さ分の余白
                   ],
                 ),
               ),
             ),
-            // バナー広告をSafeAreaの中に明示的に置く
-            if (_isAdLoaded)
+            // バナー広告を画面下部に固定（広告が有効な場合のみ）
+            if (_shouldShowAds && _isAdLoaded)
               Container(
                 width: double.infinity,
                 height: _bannerAd!.size.height.toDouble(),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border(top: BorderSide(color: Colors.grey.shade300, width: 1)),
+                ),
                 child: AdWidget(ad: _bannerAd!),
               ),
           ],

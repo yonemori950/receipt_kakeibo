@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'dart:io' show Platform;
 import 'database_helper.dart';
+import 'payment_manager.dart';
+import 'premium_dialog.dart';
 
 class HistoryScreen extends StatefulWidget {
   @override
@@ -15,12 +17,24 @@ class _HistoryScreenState extends State<HistoryScreen> {
   // AdMobバナー広告
   BannerAd? _bannerAd;
   bool _isAdLoaded = false;
+  bool _shouldShowAds = true;
 
   @override
   void initState() {
     super.initState();
     _loadExpenses();
-    _loadBannerAd();
+    _initializeAds();
+  }
+
+  Future<void> _initializeAds() async {
+    final shouldShow = await PaymentManager.shouldShowAds();
+    setState(() {
+      _shouldShowAds = shouldShow;
+    });
+    
+    if (_shouldShowAds) {
+      _loadBannerAd();
+    }
   }
 
   void _loadBannerAd() {
@@ -74,7 +88,25 @@ class _HistoryScreenState extends State<HistoryScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('家計簿履歴')),
+      appBar: AppBar(
+        title: Text('家計簿履歴'),
+        actions: [
+          if (_shouldShowAds)
+            IconButton(
+              icon: Icon(Icons.star),
+              onPressed: () async {
+                final result = await showDialog<bool>(
+                  context: context,
+                  builder: (context) => PremiumDialog(),
+                );
+                if (result == true) {
+                  _initializeAds(); // 広告状態を更新
+                }
+              },
+              tooltip: 'Premium版を購入',
+            ),
+        ],
+      ),
       body: SafeArea(
         child: Column(
           children: [
@@ -82,7 +114,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               child: _expenses.isEmpty
                   ? Center(child: Text('まだ登録されていません'))
                   : ListView.builder(
-                      padding: EdgeInsets.only(bottom: 60), // バナー広告の高さ分の余白
+                      padding: EdgeInsets.only(bottom: _shouldShowAds ? 60 : 0), // バナー広告の高さ分の余白
                       itemCount: _expenses.length,
                       itemBuilder: (context, index) {
                         final item = _expenses[index];
@@ -111,8 +143,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       },
                     ),
             ),
-            // バナー広告をSafeAreaの中に明示的に置く
-            if (_isAdLoaded)
+            // バナー広告をSafeAreaの中に明示的に置く（広告が有効な場合のみ）
+            if (_shouldShowAds && _isAdLoaded)
               Container(
                 width: double.infinity,
                 height: _bannerAd!.size.height.toDouble(),

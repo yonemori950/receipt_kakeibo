@@ -1,4 +1,4 @@
-package com.example.receipt_kakeibo
+package com.gamelab.ReceiptKakeibo
 
 import io.flutter.embedding.android.FlutterActivity
 

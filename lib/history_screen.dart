@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'dart:io' show Platform;
 import 'database_helper.dart';
-import 'payment_manager.dart';
-import 'premium_dialog.dart';
+import 'widgets/conditional_ad_banner.dart';
+import 'widgets/premium_button.dart';
+import 'widgets/conditional_ad_padding.dart';
 
 class HistoryScreen extends StatefulWidget {
   @override
@@ -14,59 +14,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
   final dbHelper = DatabaseHelper();
   List<Map<String, dynamic>> _expenses = [];
   
-  // AdMobバナー広告
-  BannerAd? _bannerAd;
-  bool _isAdLoaded = false;
-  bool _shouldShowAds = true;
-
   @override
   void initState() {
     super.initState();
     _loadExpenses();
-    _initializeAds();
-  }
-
-  Future<void> _initializeAds() async {
-    final shouldShow = await PaymentManager.shouldShowAds();
-    setState(() {
-      _shouldShowAds = shouldShow;
-    });
-    
-    if (_shouldShowAds) {
-      _loadBannerAd();
-    }
-  }
-
-  void _loadBannerAd() {
-    String adUnitId;
-    if (Platform.isAndroid) {
-      adUnitId = 'ca-app-pub-8148356110096114/3236336102';
-    } else {
-      adUnitId = 'ca-app-pub-8148356110096114/6921813131';
-    }
-
-    _bannerAd = BannerAd(
-      adUnitId: adUnitId,
-      size: AdSize.banner,
-      request: AdRequest(),
-      listener: BannerAdListener(
-        onAdLoaded: (ad) {
-          setState(() {
-            _isAdLoaded = true;
-          });
-        },
-        onAdFailedToLoad: (ad, error) {
-          print('Ad failed to load: ' + error.toString());
-          ad.dispose();
-        },
-      ),
-    );
-    _bannerAd!.load();
   }
 
   @override
   void dispose() {
-    _bannerAd?.dispose();
     super.dispose();
   }
 
@@ -91,20 +46,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
       appBar: AppBar(
         title: Text('家計簿履歴'),
         actions: [
-          if (_shouldShowAds)
-            IconButton(
-              icon: Icon(Icons.star),
-              onPressed: () async {
-                final result = await showDialog<bool>(
-                  context: context,
-                  builder: (context) => PremiumDialog(),
-                );
-                if (result == true) {
-                  _initializeAds(); // 広告状態を更新
-                }
-              },
-              tooltip: 'Premium版を購入',
-            ),
+          PremiumButton(),
         ],
       ),
       body: SafeArea(
@@ -113,8 +55,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
             Expanded(
               child: _expenses.isEmpty
                   ? Center(child: Text('まだ登録されていません'))
-                  : ListView.builder(
-                      padding: EdgeInsets.only(bottom: _shouldShowAds ? 60 : 0), // バナー広告の高さ分の余白
+                  : ConditionalAdPadding(
+                      child: ListView.builder(
                       itemCount: _expenses.length,
                       itemBuilder: (context, index) {
                         final item = _expenses[index];
@@ -142,14 +84,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         );
                       },
                     ),
+                    ),
             ),
-            // バナー広告をSafeAreaの中に明示的に置く（広告が有効な場合のみ）
-            if (_shouldShowAds && _isAdLoaded)
-              Container(
-                width: double.infinity,
-                height: _bannerAd!.size.height.toDouble(),
-                child: AdWidget(ad: _bannerAd!),
-              ),
+            // 条件付きバナー広告
+            ConditionalAdBanner(
+              adUnitId: Platform.isAndroid 
+                ? 'ca-app-pub-8148356110096114/3236336102'
+                : 'ca-app-pub-8148356110096114/6921813131',
+            ),
           ],
         ),
       ),

@@ -9,7 +9,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.receipt_kakeibo"
+    namespace = "com.gamelab.ReceiptKakeibo"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "27.0.12077973"
 

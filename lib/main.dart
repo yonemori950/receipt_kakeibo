@@ -2,15 +2,15 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:path/path.dart' as path;
 import 'package:google_mobile_ads/google_mobile_ads.dart';
-import 'dart:io' show Platform;
 import 'database_helper.dart';
 import 'history_screen.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'payment_manager.dart';
-import 'premium_dialog.dart';
+import 'ads_helper.dart';
+import 'iap_helper.dart';
+import 'widgets/conditional_ad_banner.dart';
+import 'widgets/premium_button.dart';
+import 'widgets/conditional_ad_padding.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 
 String extractAmount(String text) {
@@ -44,8 +44,11 @@ Future<void> requestPermissions() async {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // AdMobの初期化
-  await MobileAds.instance.initialize();
+  // 広告表示が必要な場合のみAdMobを初期化
+  final shouldShowAds = await AdsHelper.shouldShowAds();
+  if (shouldShowAds) {
+    await MobileAds.instance.initialize();
+  }
   
   runApp(MaterialApp(
     home: OCRScreen(),
@@ -69,42 +72,20 @@ class _OCRScreenState extends State<OCRScreen> {
   final TextEditingController _storeController = TextEditingController();
   final TextEditingController _amountController = TextEditingController();
   
-  // AdMobバナー広告
-  BannerAd? _bannerAd;
-  bool _isAdLoaded = false;
-  
   // AdMobリワード広告
   RewardedAd? _rewardedAd;
-  bool _isRewardedAdReady = false;
   
-  // 広告表示状態
-  bool _shouldShowAds = true;
-
   @override
   void initState() {
     super.initState();
     requestPermissions();
-    _initializeAds();
     _initializePayment();
-  }
-
-  Future<void> _initializeAds() async {
-    final shouldShow = await PaymentManager.shouldShowAds();
-    setState(() {
-      _shouldShowAds = shouldShow;
-    });
-    
-    if (_shouldShowAds) {
-      _loadBannerAd();
-      _loadRewardedAd();
-    }
+    _loadRewardedAd();
   }
 
   void _initializePayment() {
-    PaymentManager.initializePurchaseListener((purchaseDetails) {
+    IAPHelper.listenToPurchaseUpdates((purchaseDetails) {
       if (purchaseDetails.status == PurchaseStatus.purchased) {
-        PaymentManager.setAdRemovalPurchased();
-        _initializeAds(); // 広告状態を更新
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -117,34 +98,11 @@ class _OCRScreenState extends State<OCRScreen> {
     });
   }
 
-  void _loadBannerAd() {
-    String adUnitId;
-    if (Platform.isAndroid) {
-      adUnitId = 'ca-app-pub-8148356110096114/3236336102';
-    } else {
-      adUnitId = 'ca-app-pub-8148356110096114/6921813131';
-    }
 
-    _bannerAd = BannerAd(
-      adUnitId: adUnitId,
-      size: AdSize.banner,
-      request: AdRequest(),
-      listener: BannerAdListener(
-        onAdLoaded: (ad) {
-          setState(() {
-            _isAdLoaded = true;
-          });
-        },
-        onAdFailedToLoad: (ad, error) {
-          print('Ad failed to load: ' + error.toString());
-          ad.dispose();
-        },
-      ),
-    );
-    _bannerAd!.load();
-  }
-
-  void _loadRewardedAd() {
+  Future<void> _loadRewardedAd() async {
+    final shouldShowAds = await AdsHelper.shouldShowAds();
+    if (!shouldShowAds) return;
+    
     String adUnitId;
     if (Platform.isAndroid) {
       adUnitId = 'ca-app-pub-8148356110096114/8146446657';
@@ -158,9 +116,6 @@ class _OCRScreenState extends State<OCRScreen> {
       rewardedAdLoadCallback: RewardedAdLoadCallback(
         onAdLoaded: (ad) {
           _rewardedAd = ad;
-          setState(() {
-            _isRewardedAdReady = true;
-          });
           
           _rewardedAd!.fullScreenContentCallback = FullScreenContentCallback(
             onAdDismissedFullScreenContent: (ad) {
@@ -175,13 +130,15 @@ class _OCRScreenState extends State<OCRScreen> {
         },
         onAdFailedToLoad: (error) {
           print('Rewarded ad failed to load: $error');
-          _isRewardedAdReady = false;
         },
       ),
     );
   }
 
-  void _showRewardedAd() {
+  Future<void> _showRewardedAd() async {
+    final shouldShowAds = await AdsHelper.shouldShowAds();
+    if (!shouldShowAds) return;
+    
     if (_rewardedAd != null) {
       _rewardedAd!.show(
         onUserEarnedReward: (ad, reward) {
@@ -189,8 +146,7 @@ class _OCRScreenState extends State<OCRScreen> {
           print('User earned reward: ${reward.amount} ${reward.type}');
           
           // 24時間広告を無効化
-          PaymentManager.disableAdsFor24Hours();
-          _initializeAds(); // 広告状態を更新
+          AdsHelper.disableAdsFor24Hours();
           
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -207,9 +163,8 @@ class _OCRScreenState extends State<OCRScreen> {
 
   @override
   void dispose() {
-    _bannerAd?.dispose();
     _rewardedAd?.dispose();
-    PaymentManager.dispose();
+    IAPHelper.dispose();
     super.dispose();
   }
 
@@ -263,20 +218,7 @@ class _OCRScreenState extends State<OCRScreen> {
       appBar: AppBar(
         title: Text('レシート読み取りOCR'),
         actions: [
-          if (_shouldShowAds)
-            IconButton(
-              icon: Icon(Icons.star),
-              onPressed: () async {
-                final result = await showDialog<bool>(
-                  context: context,
-                  builder: (context) => PremiumDialog(),
-                );
-                if (result == true) {
-                  _initializeAds(); // 広告状態を更新
-                }
-              },
-              tooltip: 'Premium版を購入',
-            ),
+          PremiumButton(),
         ],
       ),
       body: SafeArea(
@@ -337,10 +279,8 @@ class _OCRScreenState extends State<OCRScreen> {
                               'amount': _amountController.text,
                             });
 
-                            // リワード広告を表示（広告が有効な場合のみ）
-                            if (_shouldShowAds) {
-                              _showRewardedAd();
-                            }
+                            // リワード広告を表示
+                            _showRewardedAd();
 
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(content: Text('保存しました！')),
@@ -363,23 +303,20 @@ class _OCRScreenState extends State<OCRScreen> {
                     ],
                     if (extractedText.isNotEmpty)
                       Text(extractedText),
-                    // バナー広告の下に余白を追加（広告が表示される場合のみ）
-                    if (_shouldShowAds && _isAdLoaded) SizedBox(height: 80), // バナー広告の高さ分の余白
+                    // 広告表示に応じたパディング
+                    ConditionalAdPadding(
+                      child: SizedBox.shrink(),
+                    ),
                   ],
                 ),
               ),
             ),
-            // バナー広告を画面下部に固定（広告が有効な場合のみ）
-            if (_shouldShowAds && _isAdLoaded)
-              Container(
-                width: double.infinity,
-                height: _bannerAd!.size.height.toDouble(),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  border: Border(top: BorderSide(color: Colors.grey.shade300, width: 1)),
-                ),
-                child: AdWidget(ad: _bannerAd!),
-              ),
+            // 条件付きバナー広告
+            ConditionalAdBanner(
+              adUnitId: Platform.isAndroid 
+                ? 'ca-app-pub-8148356110096114/3236336102'
+                : 'ca-app-pub-8148356110096114/3236336102',
+            ),
           ],
         ),
       ),

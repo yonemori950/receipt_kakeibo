@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
-import 'payment_manager.dart';
+import 'ads_helper.dart';
+import 'iap_helper.dart';
 
 class PremiumDialog extends StatefulWidget {
   @override
@@ -10,7 +11,7 @@ class PremiumDialog extends StatefulWidget {
 class _PremiumDialogState extends State<PremiumDialog> {
   bool _isLoading = false;
   bool _isPurchased = false;
-  String _productPrice = '¥120';
+  String _productPrice = '¥300';
 
   @override
   void initState() {
@@ -20,7 +21,7 @@ class _PremiumDialogState extends State<PremiumDialog> {
   }
 
   Future<void> _checkPurchaseStatus() async {
-    final isPurchased = await PaymentManager.isAdRemovalPurchased();
+    final isPurchased = await AdsHelper.isAdRemoved();
     setState(() {
       _isPurchased = isPurchased;
     });
@@ -28,7 +29,7 @@ class _PremiumDialogState extends State<PremiumDialog> {
 
   Future<void> _loadProductPrice() async {
     try {
-      final productDetailsResponse = await InAppPurchase.instance.queryProductDetails({'ad_removal_premium'});
+      final productDetailsResponse = await InAppPurchase.instance.queryProductDetails({'remove_ads'});
       if (productDetailsResponse.productDetails.isNotEmpty) {
         final product = productDetailsResponse.productDetails.first;
         setState(() {
@@ -45,7 +46,7 @@ class _PremiumDialogState extends State<PremiumDialog> {
       _isLoading = true;
     });
 
-    final success = await PaymentManager.purchaseAdRemoval();
+    final success = await IAPHelper.purchaseRemoveAds();
     
     setState(() {
       _isLoading = false;
@@ -74,7 +75,7 @@ class _PremiumDialogState extends State<PremiumDialog> {
       _isLoading = true;
     });
 
-    final success = await PaymentManager.restorePurchases();
+    final success = await IAPHelper.restorePurchases();
     
     setState(() {
       _isLoading = false;
@@ -103,10 +104,15 @@ class _PremiumDialogState extends State<PremiumDialog> {
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
-        padding: EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.8,
+          maxWidth: MediaQuery.of(context).size.width * 0.9,
+        ),
+        child: SingleChildScrollView(
+          padding: EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
             // ヘッダー
             Container(
               padding: EdgeInsets.all(16),
@@ -150,8 +156,7 @@ class _PremiumDialogState extends State<PremiumDialog> {
                 ),
               ),
               SizedBox(height: 16),
-              _buildFeatureItem('✅ バナー広告を完全削除'),
-              _buildFeatureItem('✅ リワード広告も削除'),
+              _buildFeatureItem('✅ 全ての広告を完全削除'),
               _buildFeatureItem('✅ 一度購入で永続利用'),
               _buildFeatureItem('✅ 全ての機能を無制限利用'),
               
@@ -223,12 +228,13 @@ class _PremiumDialogState extends State<PremiumDialog> {
             
             SizedBox(height: 16),
             
-            // 閉じるボタン
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text('閉じる'),
-            ),
-          ],
+              // 閉じるボタン
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: Text('閉じる'),
+              ),
+            ],
+          ),
         ),
       ),
     );
